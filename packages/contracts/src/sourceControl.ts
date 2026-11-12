@@ -66,6 +66,16 @@ export const SourceControlRepositoryLookupInput = Schema.Struct({
 });
 export type SourceControlRepositoryLookupInput = typeof SourceControlRepositoryLookupInput.Type;
 
+export const SOURCE_CONTROL_REPOSITORY_SEARCH_QUERY_MAX_LENGTH = 256;
+
+export const SourceControlRepositorySearchInput = Schema.Struct({
+  provider: SourceControlProviderKind,
+  query: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(SOURCE_CONTROL_REPOSITORY_SEARCH_QUERY_MAX_LENGTH),
+  ),
+});
+export type SourceControlRepositorySearchInput = typeof SourceControlRepositorySearchInput.Type;
+
 export const SourceControlCloneRepositoryInput = Schema.Struct({
   provider: Schema.optional(SourceControlProviderKind),
   repository: Schema.optional(TrimmedNonEmptyString),

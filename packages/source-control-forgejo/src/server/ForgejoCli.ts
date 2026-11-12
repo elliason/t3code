@@ -108,6 +108,8 @@ export interface ForgejoRepositoryInput {
   readonly repository?: string;
   readonly reference?: string;
   readonly host?: string;
+  /** Target the default login's server, as a bare `owner/name` does, ignoring the checkout. */
+  readonly serverWide?: boolean;
 }
 
 export interface ForgejoRepository {
@@ -503,7 +505,7 @@ export const make = Effect.gen(function* () {
       referenceRemote ??
       (input.repository ? parseForgejoRemote(input.repository) : null) ??
       (input.context ? parseForgejoRemote(input.context.remoteUrl) : null);
-    if (!remote && (!input.repository || input.host)) {
+    if (!remote && !input.serverWide && (!input.repository || input.host)) {
       const result = yield* process
         .run({
           operation: "ForgejoCli.remote",
@@ -647,7 +649,8 @@ export const make = Effect.gen(function* () {
   const api = Effect.fn("ForgejoCli.api")(function* (input: ForgejoApiInput) {
     const repository = yield* resolveTarget(
       input,
-      input.path.replace(/^\/+/, "") === "user" && (!input.method || input.method === "GET"),
+      input.serverWide === true ||
+        (input.path.replace(/^\/+/, "") === "user" && (!input.method || input.method === "GET")),
     );
     const stdin =
       input.body === undefined

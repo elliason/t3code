@@ -199,6 +199,15 @@ export class SourceControlProvider extends Context.Service<
       /** The host the repository is on. Without it, the checkout's host. */
       readonly host?: string;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;
+    /** Repositories the signed-in account can see whose name matches `query`. */
+    readonly searchRepositories?: (input: {
+      readonly cwd: string;
+      readonly query: string;
+      readonly limit: number;
+    }) => Effect.Effect<
+      ReadonlyArray<SourceControlRepositoryCloneUrls>,
+      SourceControlProviderError
+    >;
     readonly createRepository: (input: {
       readonly cwd: string;
       readonly repository: string;

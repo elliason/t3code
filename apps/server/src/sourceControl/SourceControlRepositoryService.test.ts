@@ -130,6 +130,41 @@ const lookupFailingWith = (cause: unknown, detail: string) =>
     ),
   );
 
+it.effect("searches repositories only through providers that can, ten at a time", () =>
+  Effect.gen(function* () {
+    const search = (
+      provider: SourceControlProvider.SourceControlProvider["Service"],
+      kind = "forgejo",
+    ) =>
+      Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        return yield* service.searchRepositories({
+          provider: SourceControlProviderKind.make(kind),
+          query: " octo ",
+        });
+      }).pipe(Effect.provide(layer({ provider })));
+    assert.deepStrictEqual(yield* search(makeProvider()), []);
+    assert.include(
+      (yield* search(makeProvider(), "unknown").pipe(Effect.flip)).message,
+      "Choose a source control provider before continuing.",
+    );
+
+    const requests: Array<{ readonly query: string; readonly limit: number }> = [];
+    const found = yield* search(
+      makeProvider({
+        searchRepositories: ({ query, limit }) => {
+          requests.push({ query, limit });
+          return Effect.succeed([CLONE_URLS]);
+        },
+      }),
+    );
+    assert.deepStrictEqual(found, [
+      { provider: SourceControlProviderKind.make("forgejo"), ...CLONE_URLS },
+    ]);
+    assert.deepStrictEqual(requests, [{ query: "octo", limit: 10 }]);
+  }),
+);
+
 it.effect("tells the user a host's fixed explanation of a failed repository lookup", () =>
   Effect.gen(function* () {
     const error = yield* lookupFailingWith(

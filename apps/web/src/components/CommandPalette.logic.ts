@@ -832,6 +832,49 @@ export type AddProjectCloneFlow =
       readonly remoteUrl: string;
     };
 
+/**
+ * Whether a repository an earlier search found still fits `query`, matched as Forgejo matches:
+ * by name, and also by owner when `query` has a `/`, case-insensitively.
+ */
+export function repositorySuggestionMatches(nameWithOwner: string, query: string): boolean {
+  const repository = nameWithOwner.toLowerCase();
+  const nameStart = repository.lastIndexOf("/") + 1;
+  const name = repository.slice(nameStart);
+  const typed = query.trim().toLowerCase();
+  const ownerEnd = typed.indexOf("/");
+  if (ownerEnd === -1) return name.includes(typed);
+  return (
+    repository.slice(0, Math.max(nameStart - 1, 0)).includes(typed.slice(0, ownerEnd)) &&
+    name.includes(typed.slice(ownerEnd + 1))
+  );
+}
+
+const REPOSITORY_SEARCH_MIN_LENGTH = 2;
+
+/** Clone URLs go to the exact lookup; a name search cannot match them. */
+export function canSearchRepositories(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.length >= REPOSITORY_SEARCH_MIN_LENGTH &&
+    !trimmed.includes("://") &&
+    !trimmed.startsWith("git@")
+  );
+}
+
+export function visibleRepositorySuggestions(
+  query: string,
+  latest: ReadonlyArray<SourceControlRepositoryInfo> | null,
+  previous: ReadonlyArray<SourceControlRepositoryInfo> | null,
+): ReadonlyArray<SourceControlRepositoryInfo> {
+  if (!canSearchRepositories(query)) return [];
+  if (latest !== null) return latest;
+  return (
+    previous?.filter((repository) =>
+      repositorySuggestionMatches(repository.nameWithOwner, query),
+    ) ?? []
+  );
+}
+
 export function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string | null {
   if (!flow) return null;
   if (flow.step === "confirm") return null;

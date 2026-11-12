@@ -21,6 +21,7 @@ import {
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
+  type SourceControlRepositorySearchInput,
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
@@ -45,6 +46,10 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly lookupRepository: (
       input: SourceControlRepositoryLookupInput,
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
+    /** Empty for a provider that cannot search. */
+    readonly searchRepositories: (
+      input: SourceControlRepositorySearchInput,
+    ) => Effect.Effect<ReadonlyArray<SourceControlRepositoryInfo>, SourceControlRepositoryError>;
     readonly prepareClone: (
       input: SourceControlCloneRepositoryInput,
     ) => Effect.Effect<SourceControlPreparedClone, SourceControlRepositoryError>;
@@ -73,6 +78,8 @@ export interface SourceControlCloneOptions {
   /** Overrides the default clone budget; `null` disables the deadline. */
   readonly timeoutMs?: number | null;
 }
+
+const REPOSITORY_SEARCH_LIMIT = 10;
 
 // Older/mobile synchronous RPCs need deadlines; tracked clones use progress and Cancel instead.
 const CLONE_TIMEOUT_MS = 120_000;
@@ -236,6 +243,23 @@ export const make = Effect.gen(function* () {
     // Someone adding or cloning a repository is waiting, so a background rate-limit pause must not
     // refuse the lookup.
     Effect.provideService(SourceControlRateLimit.Interactive, true),
+  );
+
+  const searchRepositories = Effect.fn("SourceControlRepositoryService.searchRepositories")(
+    function* (input: SourceControlRepositorySearchInput) {
+      const providerKind = yield* ensureConcreteProvider({
+        operation: "searchRepositories",
+        provider: input.provider,
+      });
+      const provider = yield* providers.get(providerKind);
+      if (!provider.searchRepositories) return [];
+      const repositories = yield* provider.searchRepositories({
+        cwd: config.cwd,
+        query: input.query.trim(),
+        limit: REPOSITORY_SEARCH_LIMIT,
+      });
+      return repositories.map((urls) => toRepositoryInfo(providerKind, urls));
+    },
   );
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
@@ -575,6 +599,11 @@ export const make = Effect.gen(function* () {
     lookupRepository: Effect.fnUntraced(function* (input) {
       return yield* lookupRepository(input).pipe(
         mapRepositoryError("lookupRepository", input.provider),
+      );
+    }),
+    searchRepositories: Effect.fnUntraced(function* (input) {
+      return yield* searchRepositories(input).pipe(
+        mapRepositoryError("searchRepositories", input.provider),
       );
     }),
     prepareClone: Effect.fnUntraced(function* (input) {

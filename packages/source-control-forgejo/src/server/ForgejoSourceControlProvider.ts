@@ -403,6 +403,30 @@ export const make = Effect.gen(function* () {
       },
       (effect, input) => effect.pipe(mapError("getRepositoryCloneUrls", input.cwd)),
     ),
+    // Forgejo reads `owner/name` as an owner match plus a name match, and a bare word also
+    // matches topics; suggestions keep to names, as clients narrow them by name while typing.
+    searchRepositories: Effect.fn("ForgejoSourceControlProvider.searchRepositories")(
+      function* (input) {
+        const result = yield* request(
+          {
+            cwd: input.cwd,
+            serverWide: true,
+            path: `repos/search?q=${encodeURIComponent(input.query)}&limit=${input.limit}`,
+          },
+          Schema.Struct({ data: Schema.Array(RepositorySchema) }),
+        );
+        const name = input.query.slice(input.query.indexOf("/") + 1).toLowerCase();
+        return result.data
+          .filter((raw) =>
+            raw.full_name
+              .slice(raw.full_name.lastIndexOf("/") + 1)
+              .toLowerCase()
+              .includes(name),
+          )
+          .map(cloneUrls);
+      },
+      (effect, input) => effect.pipe(mapError("searchRepositories", input.cwd)),
+    ),
     createRepository: Effect.fn("ForgejoSourceControlProvider.createRepository")(
       function* (input) {
         const repo = yield* cli.resolveRepository(input);

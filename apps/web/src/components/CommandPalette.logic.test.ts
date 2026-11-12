@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  SourceControlProviderKind,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
@@ -14,6 +20,8 @@ import {
   resolveAddProjectEntry,
   createCommandPaletteSearchState,
   reduceCommandPaletteSearchState,
+  repositorySuggestionMatches,
+  visibleRepositorySuggestions,
   type CommandPaletteUiState,
 } from "./CommandPalette.logic";
 
@@ -959,5 +967,60 @@ describe("newThreadNoProjectIndex", () => {
   it("keeps a pinned or current scratch project in its own place", () => {
     expect(newThreadNoProjectIndex([entry(false, true, true), entry()])).toBe(0);
     expect(newThreadNoProjectIndex([entry(true), entry(true, false, true), entry()])).toBe(1);
+  });
+});
+
+describe("repositorySuggestionMatches", () => {
+  it.each([
+    ["omarchy", true],
+    ["OMARCHY-cust", true],
+    ["eldy/omarchy", true],
+    ["ld/customiz", true],
+    ["/omarchy", true],
+    ["eldy/", true],
+    ["eldy", false],
+    ["nobody/omarchy", false],
+    ["eldy/omarchy/x", false],
+    ["omarchyx", false],
+  ])("keeps eldy/omarchy-customizations for %j: %s", (query, expected) => {
+    expect(repositorySuggestionMatches("eldy/omarchy-customizations", query)).toBe(expected);
+  });
+});
+
+describe("visibleRepositorySuggestions", () => {
+  const repositories = (...names: ReadonlyArray<string>) =>
+    names.map((nameWithOwner) => ({
+      provider: SourceControlProviderKind.make("forgejo"),
+      nameWithOwner,
+      url: `https://forgejo.test/${nameWithOwner}.git`,
+      sshUrl: `git@forgejo.test:${nameWithOwner}.git`,
+    }));
+  const known = repositories("eldy/omarchy-customizations", "maria/omnibus");
+
+  it.each([
+    [
+      "shows the answer for the current text",
+      "omarchy",
+      repositories("eldy/omarchy-customizations"),
+      null,
+      ["eldy/omarchy-customizations"],
+    ],
+    [
+      "keeps earlier matches after a failed search",
+      "omarchy",
+      null,
+      known,
+      ["eldy/omarchy-customizations"],
+    ],
+    ["narrows retained matches by owner", "maria/om", null, known, ["maria/omnibus"]],
+    ["clears on an empty answer", "omx", [], known, []],
+    ["shows nothing for one character", "o", null, known, []],
+    ["shows nothing for one trimmed character", " o ", null, known, []],
+    ["shows nothing for a clone URL", "https://forgejo.test/eldy/omarchy", null, known, []],
+    ["shows nothing for an SSH clone URL", "git@forgejo.test:eldy/omarchy", null, known, []],
+  ])("%s", (_name, query, latest, previous, expected) => {
+    expect(
+      visibleRepositorySuggestions(query, latest, previous).map((item) => item.nameWithOwner),
+    ).toEqual(expected);
   });
 });

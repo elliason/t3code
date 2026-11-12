@@ -101,6 +101,88 @@ it.effect("reads clone URLs on the given host rather than the checkout's", () =>
   );
 });
 
+it.effect(
+  "searches the signed-in server's repositories by owner and name, not the checkout's",
+  () => {
+    const urls: string[] = [];
+    const client = HttpClient.make((request) => {
+      urls.push(request.url);
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            encodeJson({
+              ok: true,
+              data: [
+                {
+                  full_name: "maria/project-web",
+                  clone_url: "https://forgejo.test/maria/project-web.git",
+                  ssh_url: "git@forgejo.test:maria/project-web.git",
+                  default_branch: "main",
+                  description: "Not sent to clients",
+                },
+                {
+                  full_name: "maria/website",
+                  clone_url: "https://forgejo.test/maria/website.git",
+                  ssh_url: "git@forgejo.test:maria/website.git",
+                  topics: ["project"],
+                },
+              ],
+            }),
+          ),
+        ),
+      );
+    });
+    return Effect.gen(function* () {
+      const cli = yield* ForgejoCli.make;
+      const provider = yield* ForgejoSourceControlProvider.make.pipe(
+        Effect.provideService(ForgejoCli.ForgejoCli, cli),
+      );
+      assert.isDefined(provider.searchRepositories);
+      const repositories = yield* provider.searchRepositories({
+        cwd: "/repo",
+        query: "maria/project",
+        limit: 10,
+      });
+      assert.deepStrictEqual(repositories, [
+        {
+          nameWithOwner: "maria/project-web",
+          url: "https://forgejo.test/maria/project-web.git",
+          sshUrl: "git@forgejo.test:maria/project-web.git",
+        },
+      ]);
+      assert.deepStrictEqual(urls, [
+        "https://forgejo.test/api/v1/repos/search?q=maria%2Fproject&limit=10",
+      ]);
+    }).pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          exists: () => Effect.succeed(true),
+          readFileString: () =>
+            Effect.succeed(
+              encodeJson({
+                hosts: { "forgejo.test": { type: "Application", token: "test-token" } },
+              }),
+            ),
+        }),
+      ),
+      Effect.provide(
+        TestSourceControlHost.layer({
+          process: {
+            run: (input) =>
+              // The checkout is on a server no login serves.
+              input.command === "git"
+                ? Effect.succeed(processOutput("https://code.example/maria/project.git"))
+                : Effect.succeed(processOutput("")),
+          },
+        }),
+      ),
+    );
+  },
+);
+
 const requiredChecksPullRequest = {
   number: 7,
   title: "Required checks",

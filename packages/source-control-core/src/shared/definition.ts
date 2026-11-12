@@ -247,6 +247,8 @@ export interface SourceControlDefinition {
   readonly credentials?: SourceControlHostCredentials;
   readonly changeRequest: ChangeRequestTerminology;
   readonly repositoryPathHint: string;
+  /** True when the server provider implements `searchRepositories`, so clients suggest matches. */
+  readonly repositorySearch?: boolean;
   readonly publicHost: string | null;
   readonly publishDescription: string;
   readonly publishHost: (signedInHost: string | null) => string;

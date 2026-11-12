@@ -1,14 +1,27 @@
 import {
+  addProjectRemoteSourceProvider,
   type AddProjectRemoteSource,
   type NewProjectPublishTarget,
 } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import type { SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  SOURCE_CONTROL_REPOSITORY_SEARCH_QUERY_MAX_LENGTH,
+  type SourceControlProviderKind,
+  type SourceControlRepositoryInfo,
+} from "@t3tools/contracts";
 import { FolderGit2Icon, LinkIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentQuery } from "~/state/query";
+import { sourceControlEnvironment } from "~/state/sourceControl";
 import { sourceControlIcon } from "~/sourceControlPresentation";
-import { ITEM_ICON_CLASS } from "./CommandPalette.logic";
+import {
+  ITEM_ICON_CLASS,
+  canSearchRepositories,
+  visibleRepositorySuggestions,
+} from "./CommandPalette.logic";
 import { CommandPaletteTitleIcon } from "./CommandPaletteResults";
 import { Button } from "./ui/button";
 import { Kbd, KbdGroup } from "./ui/kbd";
@@ -30,6 +43,66 @@ export function sourceControlHostIcon(
 ): ReactNode {
   const Icon = sourceControlIcon(definition);
   return <Icon className={className} />;
+}
+
+const REPOSITORY_SEARCH_DEBOUNCE_MS = 180;
+
+/**
+ * Repositories the host finds for a partly typed name. While a newer search runs, the last
+ * results that still fit the query stay, so the list neither blinks nor shows misses.
+ */
+export function useRepositorySuggestions(
+  environmentId: EnvironmentId | null,
+  source: AddProjectRemoteSource | null,
+  query: string,
+): {
+  readonly repositories: ReadonlyArray<SourceControlRepositoryInfo>;
+  readonly isPending: boolean;
+} {
+  const provider = source === null ? null : addProjectRemoteSourceProvider(source);
+  const searchable =
+    environmentId !== null &&
+    provider !== null &&
+    sourceControlClients.find(provider)?.repositorySearch === true;
+  const scopeKey = searchable ? `${environmentId}\n${provider}` : null;
+  const searchText = searchable
+    ? query.trim().slice(0, SOURCE_CONTROL_REPOSITORY_SEARCH_QUERY_MAX_LENGTH).trim()
+    : "";
+  const debouncedText = useDebouncedValue(searchText, REPOSITORY_SEARCH_DEBOUNCE_MS);
+  const canSearch = canSearchRepositories(searchText);
+  const settledQuery = canSearch && debouncedText === searchText ? searchText : null;
+  const search = useEnvironmentQuery(
+    environmentId === null || provider === null || settledQuery === null
+      ? null
+      : sourceControlEnvironment.searchRepositories({
+          environmentId,
+          input: { provider, query: settledQuery },
+        }),
+  );
+  // A failed search stays silent; the lookup on Enter reports its own error.
+  const latest = settledQuery !== null && search.isSuccess ? search.data : null;
+  const [previous, setPrevious] = useState<{
+    readonly scopeKey: string | null;
+    readonly repositories: ReadonlyArray<SourceControlRepositoryInfo>;
+  } | null>(null);
+  // Kept from earlier renders: React's pattern for information from previous renders.
+  if (
+    latest !== null &&
+    latest.length > 0 &&
+    (previous?.repositories !== latest || previous.scopeKey !== scopeKey)
+  ) {
+    setPrevious({ scopeKey, repositories: latest });
+  }
+  const repositories = visibleRepositorySuggestions(
+    searchText,
+    latest,
+    previous?.scopeKey === scopeKey ? previous.repositories : null,
+  );
+  return {
+    repositories,
+    isPending:
+      canSearch && repositories.length === 0 && (debouncedText !== searchText || search.isPending),
+  };
 }
 
 /** The input's trailing submit button for the add-project, clone, and new-project flows. */

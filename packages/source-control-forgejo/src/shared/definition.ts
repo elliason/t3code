@@ -69,6 +69,7 @@ export const definition = defineSourceControl({
     plural: "pull requests",
   },
   repositoryPathHint: "owner/repo",
+  repositorySearch: true,
   // Codeberg is the public Forgejo; any other server is self-hosted.
   publicHost: "codeberg.org",
   publishDescription: "Your signed-in server",
